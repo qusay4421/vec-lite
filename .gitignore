@@ -1,0 +1,11 @@
+# Build output
+/bin/
+vec-lite
+
+# Index snapshots and local data
+/data/
+*.idx
+
+# Go test/coverage artifacts
+*.out
+coverage.*
