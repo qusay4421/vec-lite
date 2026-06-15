@@ -11,8 +11,8 @@ alongside the code; sections marked TODO are on the roadmap below.
 
 ## Status
 
-Day 2-3 of 7. Done: float32 vectors and the three distance metrics, an exact
-brute-force index (the oracle), and the HNSW approximate index.
+Day 4 of 7. Done: float32 vectors and the three distance metrics, an exact
+brute-force index (the oracle), the HNSW approximate index, and snapshot persistence.
 
 ## The problem
 
@@ -93,10 +93,24 @@ recall on clustered data; that refinement is noted as future work. Updating an
 existing id currently replaces its vector but keeps its links; a full relink on
 update is also future work.
 
-## Persistence (Day 4, TODO)
+## Persistence (Day 4, done)
 
-Save and reload an index so it survives a restart, without rebuilding the graph from
-scratch. To decide: snapshot the whole graph vs an append log of inserts.
+`Save`/`Load` snapshot the whole index (`internal/index/persist.go`). The snapshot
+stores the finished graph (each node's vector and its per-layer neighbor lists), not
+just the raw vectors, because building the graph is the expensive part: every insert
+runs a search, so rebuilding a large index from vectors alone would be slow. Reloading
+restores the graph directly and skips that cost. A round-trip test confirms a loaded
+index returns identical search results and still accepts new inserts.
+
+Format is encoding/gob over parallel arrays of exported fields, which keeps the codec
+trivial. `SaveFile` writes to a temp file and renames, so a crash mid-save cannot
+replace a good snapshot with a half-written one.
+
+Chosen tradeoff: a full snapshot is simple and the load is a single read, but it
+rewrites everything each time. An append-only log of inserts would make saves
+incremental at the cost of replay-on-load and compaction. For an index that is
+rebuilt or snapshotted periodically rather than on every write, the snapshot is the
+simpler fit; the log approach is noted as the alternative.
 
 ## Metadata and filtered search (Day 5, TODO)
 
@@ -118,7 +132,7 @@ hashing, reusing the dynamo-lite ring.
 
 - [x] Day 1: vectors, distance metrics, exact brute-force index (the oracle)
 - [x] Day 2-3: HNSW approximate index
-- [ ] Day 4: persistence (save/load an index)
+- [x] Day 4: persistence (save/load an index)
 - [ ] Day 5: metadata payloads and filtered search
 - [ ] Day 6: recall/latency benchmarks and parameter tuning
 - [ ] Day 7: HTTP service, a semantic-search demo, and a sharding sketch
