@@ -11,8 +11,8 @@ alongside the code; sections marked TODO are on the roadmap below.
 
 ## Status
 
-Day 6 of 7. Done: float32 vectors and the three distance metrics, an exact
-brute-force index (the oracle), the HNSW approximate index, snapshot persistence, metadata with filtered search, and a recall/latency benchmark suite.
+Day 7 of 7 (complete). Done: float32 vectors and the three distance metrics, an exact
+brute-force index (the oracle), the HNSW approximate index, snapshot persistence, metadata with filtered search, a recall/latency benchmark suite, an HTTP service, and a text-search demo.
 
 ## The problem
 
@@ -184,11 +184,45 @@ roughly with the log, so the speedup widens. Memory is dominated by the raw vect
 the in-RAM ceiling first, which is the same place dynamo-lite's index hits and where
 an on-disk vector store or product quantization would come in.
 
-## Service and demo (Day 7, TODO)
+## Service and demo (Day 7, done)
 
-An HTTP API and a real demo: semantic search over a text corpus using precomputed
-embeddings. Plus a written sketch of how to shard across nodes with consistent
-hashing, reusing the dynamo-lite ring.
+HTTP service (`cmd/server`): a JSON API over a collection. PUT /vectors/{id} inserts
+a vector with metadata, POST /search runs a nearest-neighbor query with an optional
+metadata filter, GET /health is liveness. This is the boundary a real client would
+use, and it keeps the index, metadata, and filtering behind one process.
+
+Demo (`cmd/demo`): the whole stack end to end on real text. A small corpus of
+programming terms is embedded with the trigram text embedder (`internal/embed`),
+indexed, and queried with misspellings. Each typo retrieves its intended term as the
+nearest neighbor ("pyton" finds python, "kubernates" finds kubernetes, "javascrpt"
+finds javascript), and a filtered query returns only matching-kind results.
+
+Honest framing of the demo: the trigram embedder measures lexical (surface-form)
+similarity, not learned meaning, so this is fuzzy text matching, not semantic search.
+The point it proves is that the database half is complete and correct: swap the
+embedder for a real model (a sentence-transformer, an embedding API) and the exact
+same index and query code becomes semantic search. The database never sees text, only
+vectors, which is the right separation.
+
+### Sharding sketch (future work, not built)
+
+A single node holds the whole index in RAM, so the first scaling limit is memory.
+The path to a distributed vector store reuses dynamo-lite's ring directly:
+
+- Partition by vector id with the consistent-hash ring: each id maps to N nodes, and
+  each node holds an independent HNSW over only its shard. Inserts route to the
+  owning nodes exactly like dynamo-lite key writes.
+- A query is a scatter-gather: the coordinator sends the query vector to all shards
+  (or all distinct primaries), each returns its local top-k, and the coordinator
+  merges those into a global top-k. Recall holds because every vector is searched by
+  exactly one shard's graph; only the merge is added.
+- Replication and read-repair carry over unchanged for availability, since a shard's
+  index is just durable state like dynamo-lite's KV store.
+
+The new problem a distributed vector store adds, and the reason this is a sketch
+rather than a build, is rebalancing: moving a shard means rebuilding its HNSW graph on
+the new owner, since the graph is not portable the way raw KV pairs are. That graph
+re-build on membership change is the real design work, and it is left as future work.
 
 ## Roadmap
 
@@ -197,4 +231,4 @@ hashing, reusing the dynamo-lite ring.
 - [x] Day 4: persistence (save/load an index)
 - [x] Day 5: metadata payloads and filtered search
 - [x] Day 6: recall/latency benchmarks and parameter tuning
-- [ ] Day 7: HTTP service, a semantic-search demo, and a sharding sketch
+- [x] Day 7: HTTP service, a text-search demo, and a sharding sketch
