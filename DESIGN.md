@@ -11,9 +11,8 @@ alongside the code; sections marked TODO are on the roadmap below.
 
 ## Status
 
-Day 1 of 7. Done: fixed-dimension float32 vectors, the three standard distance
-metrics, and an exact brute-force index that doubles as the correctness oracle for
-the approximate index.
+Day 2-3 of 7. Done: float32 vectors and the three distance metrics, an exact
+brute-force index (the oracle), and the HNSW approximate index.
 
 ## The problem
 
@@ -63,12 +62,36 @@ datasets, and the oracle the approximate index is graded against (recall = fract
 of brute-force neighbors the ANN index also returns). A property test confirms its
 top-k matches an independent full-sort reference on random data.
 
-## Approximate index, HNSW (Day 2-3, TODO)
+## Approximate index, HNSW (Day 2-3, done)
 
-Hierarchical Navigable Small World graph. A layered proximity graph where search
-greedily hops toward the query, starting coarse at the top layer and refining down.
-To document: the M (neighbors per node) and efConstruction/efSearch parameters and
-how they trade recall against speed and memory.
+Hierarchical Navigable Small World graph (`internal/index/hnsw.go`). Nodes live on
+multiple layers. Each node is assigned a top layer drawn from an exponential
+distribution, so layer 0 holds every node and each higher layer holds about 1/M of
+the layer below. The upper layers are a sparse express lane; the bottom layer is the
+dense graph.
+
+Search starts at a single entry point on the top layer and greedily hops to the
+neighbor closest to the query, descending one layer at a time with a width-1 search
+until layer 0. At layer 0 it widens to an ef-sized beam search and returns the
+nearest k. Insertion does the same descent, then on each layer from the node's top
+down to 0 it links the new node to its closest neighbors and prunes every touched
+neighbor list back to the degree cap.
+
+Parameters and their tradeoffs:
+- M (neighbors per node, default 16; layer 0 uses 2M): higher M raises recall and
+  memory and slows inserts. It is the graph's degree.
+- efConstruction (default 200): beam width while building. Higher means a better
+  graph and slower inserts, but no query cost.
+- efSearch (default 50, tunable at query time via SetEfSearch): beam width while
+  querying. This is the live recall/latency dial. Tests show recall climbing from
+  about 0.76 at ef=10 to 0.99 at ef=80 on the same graph, and recall@10 of about
+  0.99 at the defaults against the brute-force oracle.
+
+Neighbor selection here keeps the closest candidates. The original paper's heuristic
+also keeps some farther but more diverse neighbors to improve graph connectivity and
+recall on clustered data; that refinement is noted as future work. Updating an
+existing id currently replaces its vector but keeps its links; a full relink on
+update is also future work.
 
 ## Persistence (Day 4, TODO)
 
@@ -94,7 +117,7 @@ hashing, reusing the dynamo-lite ring.
 ## Roadmap
 
 - [x] Day 1: vectors, distance metrics, exact brute-force index (the oracle)
-- [ ] Day 2-3: HNSW approximate index
+- [x] Day 2-3: HNSW approximate index
 - [ ] Day 4: persistence (save/load an index)
 - [ ] Day 5: metadata payloads and filtered search
 - [ ] Day 6: recall/latency benchmarks and parameter tuning
