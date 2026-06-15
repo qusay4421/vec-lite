@@ -11,8 +11,8 @@ alongside the code; sections marked TODO are on the roadmap below.
 
 ## Status
 
-Day 4 of 7. Done: float32 vectors and the three distance metrics, an exact
-brute-force index (the oracle), the HNSW approximate index, and snapshot persistence.
+Day 5 of 7. Done: float32 vectors and the three distance metrics, an exact
+brute-force index (the oracle), the HNSW approximate index, snapshot persistence, and metadata with filtered search.
 
 ## The problem
 
@@ -112,10 +112,28 @@ incremental at the cost of replay-on-load and compaction. For an index that is
 rebuilt or snapshotted periodically rather than on every write, the snapshot is the
 simpler fit; the log approach is noted as the alternative.
 
-## Metadata and filtered search (Day 5, TODO)
+## Metadata and filtered search (Day 5, done)
 
-Attach a payload to each vector and filter by it during search. To document: the
-hard part, which is filtering inside graph traversal without wrecking recall.
+`internal/collection` wraps the index with a string-keyed metadata payload per vector
+and filtered search ("nearest neighbors where category=target"). Filters are
+composable predicates (Equals, And).
+
+The hard part is combining a filter with an approximate graph search. Three options:
+- Pre-filter: scan the matching subset exactly. Always correct, but O(matches) per
+  query, so it loses the index's speed when the subset is large.
+- Filter during traversal: only accept graph nodes that pass the predicate. Keeps
+  speed but can wreck recall, because the graph's connectivity runs through nodes the
+  filter rejects, and the walk gets stranded.
+- Post-filter with over-fetch (what this uses): ask the index for k*factor neighbors,
+  then keep the first k that pass. Simple, keeps the fast search, and on filters that
+  match a reasonable share of data it recovers almost all of the true filtered
+  neighbors. Measured against an exact scan of the matching subset, recall is about
+  0.998 at the default over-fetch of 8x for a filter matching a quarter of the data.
+
+The known limit, stated honestly: a very selective filter can leave fewer than k
+matches inside the fetched window, so post-filtering under-returns. A production system
+picks per-query between post-filtering and an exact subset scan based on the filter's
+estimated selectivity; that planner is future work.
 
 ## Benchmarks: recall and latency (Day 6, TODO)
 
@@ -133,6 +151,6 @@ hashing, reusing the dynamo-lite ring.
 - [x] Day 1: vectors, distance metrics, exact brute-force index (the oracle)
 - [x] Day 2-3: HNSW approximate index
 - [x] Day 4: persistence (save/load an index)
-- [ ] Day 5: metadata payloads and filtered search
+- [x] Day 5: metadata payloads and filtered search
 - [ ] Day 6: recall/latency benchmarks and parameter tuning
 - [ ] Day 7: HTTP service, a semantic-search demo, and a sharding sketch
