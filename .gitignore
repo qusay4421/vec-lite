@@ -9,3 +9,7 @@ vec-lite
 # Go test/coverage artifacts
 *.out
 coverage.*
+
+# Pretrained word vectors (downloaded via scripts/get-glove.sh)
+/vectors/
+*.gz

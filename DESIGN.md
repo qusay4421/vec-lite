@@ -197,12 +197,23 @@ indexed, and queried with misspellings. Each typo retrieves its intended term as
 nearest neighbor ("pyton" finds python, "kubernates" finds kubernetes, "javascrpt"
 finds javascript), and a filtered query returns only matching-kind results.
 
-Honest framing of the demo: the trigram embedder measures lexical (surface-form)
-similarity, not learned meaning, so this is fuzzy text matching, not semantic search.
-The point it proves is that the database half is complete and correct: swap the
-embedder for a real model (a sentence-transformer, an embedding API) and the exact
-same index and query code becomes semantic search. The database never sees text, only
-vectors, which is the right separation.
+The demo has two modes behind the same index and query code:
+- Lexical (default): the trigram embedder, surface-form similarity, fuzzy/typo
+  matching. Runs with zero setup.
+- Semantic (`-vectors path`): pretrained GloVe word vectors (`internal/embed`
+  WordVectors), mean-pooled. This captures meaning, not spelling. With the free 50d
+  GloVe file, query words that are not in the corpus retrieve by meaning: "monarch"
+  finds king/queen/throne, "automobile" finds car/truck, "feline" finds cat/kitten,
+  and a filtered query for the nearest food to "beverage" returns coffee and tea. The
+  vectors are free, public, and run fully offline (no API, no key); `scripts/get-glove.sh`
+  fetches the ~66MB file.
+
+The loader reads GloVe or word2vec text format (and gzipped files), auto-detecting and
+skipping the word2vec header line. Mean-pooling word vectors is a classic embedding
+baseline: weaker than a sentence-transformer on word order and negation, but the
+honest price of zero cost and no dependencies. The key separation holds either way:
+the database only ever sees vectors, so the embedder is swappable, from trigrams to
+GloVe to a hosted model, with no change to the index, persistence, or filtering.
 
 ### Sharding sketch (future work, not built)
 

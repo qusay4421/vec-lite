@@ -23,23 +23,33 @@ DESIGN.md). See the non-goals there.
 
 ## Run the demo
 
-Requires Go 1.26 or newer. The demo embeds a small corpus of programming terms and
-queries it with misspellings:
+Requires Go 1.26 or newer. Two modes, same index and query code underneath.
+
+Semantic search (free, offline). Download pretrained GloVe vectors once, then query by
+meaning. The query words are not in the corpus; they are retrieved by meaning alone:
+
+```sh
+sh scripts/get-glove.sh                                   # ~66MB, no account needed
+go run ./cmd/demo -vectors vectors/glove-wiki-gigaword-50.gz
+```
+
+```
+query "monarch"    -> throne (0.235), king (0.281), queen (0.323)
+query "automobile" -> car (0.304), bicycle (0.334), truck (0.345)
+query "feline"     -> kitten (0.373), puppy (0.435), cat (0.445)
+nearest food to "beverage" -> coffee (0.242), tea (0.342), pizza (0.390)
+```
+
+Lexical fallback (zero setup). Without a vectors file it matches by spelling, which is
+enough to show typo tolerance:
 
 ```sh
 go run ./cmd/demo
+# query "pyton" -> python, "javascrpt" -> javascript, ...
 ```
 
-```
-query "pyton"      -> python (0.198), pytorch (0.430), numpy (0.857)
-query "kubernates" -> kubernetes (0.214), kafka (0.798), postgres (0.831)
-query "javascrpt"  -> javascript (0.168), java (0.547), typescript (0.600)
-nearest databases to "postgers" -> postgres, redis, mongodb
-```
-
-The trigram embedder here is lexical similarity, not learned semantics. Swap it for a
-real embedding model and the same index and queries become semantic search; the
-database only ever sees vectors.
+The embedder is the only thing that changes between modes. The database only ever sees
+vectors, so trigrams, GloVe, or a hosted model all plug into the same index.
 
 ## Run the HTTP service
 
@@ -79,7 +89,7 @@ filtered-search recall, and the text embedder.
 internal/vector       float32 vectors and distance metrics
 internal/index        BruteForce (the oracle), HNSW, and snapshot persistence
 internal/collection   metadata payloads and filtered search
-internal/embed        trigram text embedder (for the demo)
+internal/embed        trigram and GloVe word-vector embedders (for the demo)
 cmd/server            HTTP/JSON service
 cmd/demo              end-to-end text-search demo
 cmd/bench             recall/latency benchmark
